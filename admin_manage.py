@@ -46,7 +46,7 @@ def showAddUser(callback):
     subwin.title("CMS - Admin Database Management - Add User")
     appWidth = 200
     appHeight = 150
-    
+
     screenWidth = subwin.winfo_screenwidth()
     screenHeight = subwin.winfo_screenheight()
 
@@ -101,6 +101,7 @@ def showManageUsers():
     y = (screenHeight / 2) - (appHeight / 2)
 
     subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    subwin.columnconfigure(1, weight=1)
     rowsLoaded = []
     def populate(frame):
         nonlocal rowsLoaded
@@ -113,10 +114,10 @@ def showManageUsers():
             Button(frame, text="Add", command=lambda: showAddUser(lambda: populate(frame)), width=20).grid(row=0, column=1)
             i = 1
             for uid, uname, accesslevel in cursor.fetchall():
-                l1 = Label(frame, text=f"{uid}", width=3, borderwidth="1", 
+                l1 = Label(frame, text=f"{uid}", width=3, borderwidth="1",
                         relief="solid")
                 l1.grid(row=i, column=0)
-                l2 = Label(frame, text=f"{uname}",width=20)
+                l2 = Label(frame, text=f"{uname}")
                 l2.grid(row=i, column=1)
                 def updateAccessLevel(uid):
                     with dbex() as cs:
@@ -125,14 +126,12 @@ def showManageUsers():
                     with dbex() as cs:
                         cs.execute("delete from userdata where uid = ?", (uid,))
                     populate(frame)
-                
+
                 why = DoubleVar(root, value=accesslevel)
                 s3 = Spinbox(frame, from_=0, to=100, increment=1, textvariable=why, command=lambda: updateAccessLevel(uid))
                 s3.grid(row=i, column=2, padx=10)
                 b4 = Button(frame, text="Delete", command=lambda: delete(uid))
                 b4.grid(row=i, column=3, padx=10)
-
-                frame.columnconfigure(1, weight=1)
 
                 rowsLoaded.append(l1)
                 rowsLoaded.append(l2)
@@ -146,16 +145,25 @@ def showManageUsers():
 
     def onFrameConfigure(canvas):
         canvas.configure(scrollregion=canvas.bbox("all"))
-    canvas = Canvas(subwin, borderwidth=0)
-    frame = Frame(canvas)
+
+    def canvas_resized(event):
+        print(winid)
+        canvas.itemconfig(winid, width=event.width - 8)
+        #frame.configure(width=event.width - 8)
+
+    canvas = Canvas(subwin, borderwidth=0, bg="red")
+    frame = Frame(canvas, bg="green")
     vsb = Scrollbar(subwin, orient="vertical", command=canvas.yview)
     canvas.configure(yscrollcommand=vsb.set)
 
     vsb.pack(side="right", fill="y")
     canvas.pack(side="left", fill="both", expand=True)
-    canvas.create_window((4,4), window=frame, anchor="nw")
+    winid = canvas.create_window((4,4), window=frame, anchor="nw")
 
     frame.bind("<Configure>", lambda event, canvas=canvas: onFrameConfigure(canvas))
+    frame.columnconfigure(1, weight=1)
+
+    canvas.bind("<Configure>", canvas_resized)
     populate(frame)
 
 def main():
