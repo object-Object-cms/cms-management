@@ -7,7 +7,9 @@ import sys
 import sqlite3
 import tkinter.messagebox
 from threading import Thread
-from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import askopenfilename, asksaveasfilename
+from PIL import ImageTk, Image
+from io import BytesIO
 from utils import state, CursorClosable
 from string import ascii_letters, digits
 from random import choice
@@ -147,12 +149,266 @@ def showManageUsers():
         canvas.configure(scrollregion=canvas.bbox("all"))
 
     def canvas_resized(event):
-        print(winid)
         canvas.itemconfig(winid, width=event.width - 8)
         #frame.configure(width=event.width - 8)
 
-    canvas = Canvas(subwin, borderwidth=0, bg="red")
-    frame = Frame(canvas, bg="green")
+    canvas = Canvas(subwin, borderwidth=0)
+    frame = Frame(canvas)
+    vsb = Scrollbar(subwin, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=vsb.set)
+
+    vsb.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+    winid = canvas.create_window((4,4), window=frame, anchor="nw")
+
+    frame.bind("<Configure>", lambda event, canvas=canvas: onFrameConfigure(canvas))
+    frame.columnconfigure(1, weight=1)
+
+    canvas.bind("<Configure>", canvas_resized)
+    populate(frame)
+
+def showAddFile(callback):
+    fileToAdd = askopenfilename()
+    subwin = Toplevel(root)
+    subwin.title("CMS - Admin Database Management - Add File")
+    appWidth = 200
+    appHeight = 150
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    def labelledInput(name, factory=Entry):
+        lbFrame = Frame(subwin, height=5)
+        i = factory(lbFrame)
+        Label(lbFrame, text=name).pack(side=LEFT)
+        i.pack(side=RIGHT)
+        lbFrame.pack(side=TOP, pady=4)
+        return i
+    mime = labelledInput("Mime Type")
+    labelledInput("File", lambda e: Label(e, text=fileToAdd))
+
+    def execute():
+        mimeType = mime.get()
+        
+        with dbex() as cursor, open(fileToAdd, 'rb') as f:
+            cursor.execute("insert into blobdata (type, content) values (?, ?)", (mimeType, f.read()))
+        callback()
+        subwin.destroy()
+    Button(subwin, text="Add", command=execute).pack(side=TOP, pady=4)
+
+
+def showManageFiles():
+    subwin = Toplevel(root)
+    subwin.title("CMS - Admin Database Management - Manage Files")
+    appWidth = 640
+    appHeight = 480
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    subwin.columnconfigure(1, weight=1)
+    rowsLoaded = []
+    def populate(frame):
+        global _images
+        _images = []
+        nonlocal rowsLoaded
+        if len(rowsLoaded) != 0:
+            for e in rowsLoaded:
+                e.grid_forget()
+            rowsLoaded = []
+        with dbq() as cursor:
+            cursor.execute("select id, type, content from blobdata")
+            Button(frame, text="Add", command=lambda: showAddFile(lambda: populate(frame)), width=50).grid(row=0, column=1, columnspan=2)
+            i = 1
+            for id_, type_, content in cursor.fetchall():
+                l1 = Label(frame, text=f"{id_}", width=3, borderwidth="1",
+                        relief="solid")
+                l1.grid(row=i, column=0)
+                l2 = Label(frame, text=f"{type_}")
+                l2.grid(row=i, column=1)
+                if type_.startswith("image/"):
+                    try:
+                        img = Image.open(BytesIO(content)).resize((250, 250), Image.ANTIALIAS)
+                        _images.append(ImageTk.PhotoImage(img))
+                        l3 = Label(frame, image = _images[-1])
+                        l3.grid(row=i, column=2)
+                    except Exception as e:
+                        l3 = Label(frame, text="Cannot preview")
+                        l3.grid(row=i, column=2)
+                        print(e)
+                else:
+                    l3 = Label(frame, text="Cannot preview")
+                    l3.grid(row=i, column=2)
+
+                def downloadAction(_content):
+                    out = asksaveasfilename()
+                    with open(out, 'wb') as e:
+                        e.write(_content)
+                        tkinter.messagebox.showinfo(title = "Download", message = "File downloaded successfully")
+                def _fabricate(_content):
+                    return lambda: downloadAction(_content)
+
+                b4 = Button(frame, text="Download", command=_fabricate(content))
+                b4.grid(row=i, column=3)
+                rowsLoaded.append(l1)
+                rowsLoaded.append(l2)
+                rowsLoaded.append(l3)
+                rowsLoaded.append(b4)
+                i += 1
+            if i == 1:
+                l1 = Label(frame, text="No files")
+                l1.grid(row=1, column=1)
+                rowsLoaded.append(l1)
+
+    def onFrameConfigure(canvas):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def canvas_resized(event):
+        canvas.itemconfig(winid, width=event.width - 8)
+
+    canvas = Canvas(subwin, borderwidth=0)
+    frame = Frame(canvas)
+    vsb = Scrollbar(subwin, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=vsb.set)
+
+    vsb.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+    winid = canvas.create_window((4,4), window=frame, anchor="nw")
+
+    frame.bind("<Configure>", lambda event, canvas=canvas: onFrameConfigure(canvas))
+    frame.columnconfigure(1, weight=1)
+
+    canvas.bind("<Configure>", canvas_resized)
+    populate(frame)
+
+def showAddLink(callback, idx):
+    subwin = Toplevel(root)
+    subwin.title(f"CMS - Admin Database Management - {'Edit' if idx != -1 else 'Add'} Link")
+    appWidth = 200
+    appHeight = 150
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+    create = False
+    with dbq() as cursor:
+        cursor.execute("select content from specialpages where name = 'MENUBAR'")
+        content = cursor.fetchone()
+        if content is None:
+            create = True
+            content = []
+        else:
+            content = json.loads(content[0])
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    def labelledInput(name, initial = ""):
+        lbFrame = Frame(subwin, height=5)
+        i = Entry(lbFrame)
+        i.insert(0, initial)
+        Label(lbFrame, text=name).pack(side=LEFT)
+        i.pack(side=RIGHT)
+        lbFrame.pack(side=TOP, pady=4)
+        return i
+    name = labelledInput("Name", content[idx]['text'] if idx != -1 else 'Example')
+    link = labelledInput("Page", content[idx]['url'] if idx != -1 else '/example')
+
+    def execute():
+        sName = name.get()
+        sLink = link.get()
+        obj = { "text": sName, "url": sLink }
+        if idx != -1:
+            content[idx] = obj
+        else:
+            content.append(obj)
+        
+        with dbex() as cursor:
+            if create:
+                cursor.execute("insert into specialpages (name, content) values ('MENUBAR', ?)", (json.dumps(content), ))
+            else:
+                cursor.execute("update specialpages set content = ? where name = 'MENUBAR'", (json.dumps(content), ))
+        callback()
+        subwin.destroy()
+    Button(subwin, text='Edit' if idx != -1 else 'Add', command=execute).pack(side=TOP, pady=4)
+
+
+def showManageLinks():
+    subwin = Toplevel(root)
+    subwin.title("CMS - Admin Database Management - Manage Links")
+    appWidth = 640
+    appHeight = 480
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    subwin.columnconfigure(2, weight=1)
+    rowsLoaded = []
+    def populate(frame):
+        nonlocal rowsLoaded
+        if len(rowsLoaded) != 0:
+            for e in rowsLoaded:
+                e.grid_forget()
+            rowsLoaded = []
+        with dbq() as cursor:
+            cursor.execute("select content from specialpages where name = 'MENUBAR'")
+            Button(frame, text="Add", command=lambda: showAddLink(lambda: populate(frame), -1), width=20).grid(row=0, column=1, columnspan=2)
+            i = 1
+            content = cursor.fetchone()
+            if content:
+                content = json.loads(content[0])
+                for index, value in enumerate(content):
+                    l1 = Label(frame, text=f"{index}", width=3, borderwidth="1",
+                            relief="solid")
+                    l1.grid(row=i, column=0)
+                    l2 = Label(frame, text=f"{value['text']}")
+                    l2.grid(row=i, column=1)
+                    l3 = Label(frame, text=f"{value['url']}")
+                    l3.grid(row=i, column=2)
+                    _fabricate = lambda e: lambda: showAddLink(lambda: populate(frame), e)
+                    b4 = Button(frame, text="Edit", command=_fabricate(index))
+                    b4.grid(row=i, column=3)
+                    def _fabricate2(idx):
+                        def _e():
+                            del content[idx]
+                            with dbex() as cursor:
+                                cursor.execute("update specialpages set content = ? where name = 'MENUBAR'", (json.dumps(content), ))
+                            populate(frame)
+                        return _e
+                                
+                    b5 = Button(frame, text="Delete", command=_fabricate2(index))
+                    b5.grid(row=i, column=4)
+                    rowsLoaded.append(l1)
+                    rowsLoaded.append(l2)
+                    rowsLoaded.append(l3)
+                    rowsLoaded.append(b4)
+                    rowsLoaded.append(b5)
+                    i += 1
+            if i == 1:
+                l1 = Label(frame, text="No content")
+                l1.grid(row=1, column=1)
+                rowsLoaded.append(l1)
+
+    def onFrameConfigure(canvas):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def canvas_resized(event):
+        canvas.itemconfig(winid, width=event.width - 8)
+
+    canvas = Canvas(subwin, borderwidth=0)
+    frame = Frame(canvas)
     vsb = Scrollbar(subwin, orient="vertical", command=canvas.yview)
     canvas.configure(yscrollcommand=vsb.set)
 
@@ -175,7 +431,7 @@ def main():
         global database
         if database:
             database.close()
-        fname = askopenfilename()
+        fname = "/ram/data.db"#askopenfilename()
         if not fname:
             return
         database = sqlite3.connect(fname)
@@ -194,9 +450,6 @@ def main():
         state(openDBButton, "normal")
         state(closeDBButton, "disabled")
         state(mainActionsFrame, "disabled", True)
-
-    def openFileManagementAction():
-        pass
 
     root = Tk()
     root.title("CMS - Admin Database Management")
@@ -225,8 +478,9 @@ def main():
 
     mainActionsFrame = Frame(root)
     manageUsersButton = Button(mainActionsFrame, text="Manage Users", command=showManageUsers)
-    manageFilesButton = Button(mainActionsFrame, text="Manage Files", command=openFileManagementAction)
-    leftToRight(30, manageUsersButton, manageFilesButton)
+    manageFilesButton = Button(mainActionsFrame, text="Manage Files", command=showManageFiles)
+    manageLinksButton = Button(mainActionsFrame, text="Manage Links", command=showManageLinks)
+    leftToRight(30, manageUsersButton, manageFilesButton, manageLinksButton)
 
     closeDatabase()
 
