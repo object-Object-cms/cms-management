@@ -1,10 +1,8 @@
 from tkinter import *
-import requests
 import json
-import traceback
 import signal
-import sys
 import sqlite3
+from tkinter import ttk
 import tkinter.messagebox
 from threading import Thread
 from tkinter.filedialog import askopenfilename, asksaveasfilename
@@ -236,7 +234,7 @@ def showManageFiles():
                 l2.grid(row=i, column=1)
                 if type_.startswith("image/"):
                     try:
-                        img = Image.open(BytesIO(content)).resize((250, 250), Image.ANTIALIAS)
+                        img = Image.open(BytesIO(content)).resize((250, 250), Image.LANCZOS)
                         _images.append(ImageTk.PhotoImage(img))
                         l3 = Label(frame, image = _images[-1])
                         l3.grid(row=i, column=2)
@@ -422,6 +420,436 @@ def showManageLinks():
     canvas.bind("<Configure>", canvas_resized)
     populate(frame)
 
+def helperUpdateMainElement(element):
+    with dbex() as cursor:
+        cursor.execute("select content from specialpages where name = 'HOME'")
+        content = cursor.fetchone()
+        if not content: return
+        content = json.loads(content[0])
+        assert content['name'] == 'RootGrid'
+        for index, subProp in enumerate(content["props"]["subComponents"]):
+            if subProp["id"] == element["id"]:
+                content["props"]['subComponents'][index] = element
+                break
+        else:
+            raise Exception("No elements altered")
+        cursor.execute('update specialpages set content = ? where name = "HOME"', (json.dumps(content), ))
+                
+
+def helperGetMainElements(name):
+    with dbq() as cursor:
+        cursor.execute("select content from specialpages where name = 'HOME'")
+        content = cursor.fetchone()
+        if not content:
+            return []
+        content = json.loads(content[0])
+        retList = []
+        assert content['name'] == 'RootGrid'
+        for subProp in content["props"]["subComponents"]:
+            if subProp["component"]["name"] == name:
+                retList.append(subProp)
+    return retList
+
+def prop(e, n):
+    return e["component"]["props"][n]
+
+def showAddSlelement(callback, idx):
+    subwin = Toplevel(root)
+    subwin.title(f"CMS - Admin Database Management - {'Edit' if idx != -1 else 'Add'} Slider Element")
+    appWidth = 200
+    appHeight = 150
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+
+    slider = helperGetMainElements("Slider")
+    assert len(slider) > 0
+    slider = slider[0]
+    slides = prop(slider, "slides")
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    def labelledInput(name, initial = ""):
+        lbFrame = Frame(subwin, height=5)
+        i = Entry(lbFrame)
+        i.insert(0, initial)
+        Label(lbFrame, text=name).pack(side=LEFT)
+        i.pack(side=RIGHT)
+        lbFrame.pack(side=TOP, pady=4)
+        return i
+    name = labelledInput("Title", slides[idx]['title'] if idx != -1 else 'Title')
+    desc = labelledInput("Sub Title", slides[idx]['description'] if idx != -1 else 'A more detailed title')
+    image = labelledInput("Image URL", slides[idx]['image'] if idx != -1 else '$0')
+    colorFr = Frame(subwin, height=5)
+    Label(colorFr, text="Text Color").pack(side=LEFT)
+    color = StringVar()
+    if idx != -1: color.set(slides[idx]["textColor"])
+    colorCb = ttk.Combobox(colorFr, textvariable=color)
+    colorCb["values"] = ("black", "white")
+    colorCb['state'] = 'readonly'
+    colorCb.pack(side=RIGHT)
+    colorFr.pack(side=TOP, pady=4)
+
+    def execute():
+        title = name.get()
+        description = desc.get()
+        imageURL = image.get()
+        textColor = color.get()
+        obj = { "title":  title, "description": description, "image": imageURL, "textColor": textColor }
+        if idx != -1:
+            slides[idx] = obj
+        else:
+            slides.append(obj)
+        
+        helperUpdateMainElement(slider)
+        callback()
+        subwin.destroy()
+    Button(subwin, text='Edit' if idx != -1 else 'Add', command=execute).pack(side=TOP, pady=4)
+
+
+def showManageSlider():
+    subwin = Toplevel(root)
+    subwin.title("CMS - Admin Database Management - Manage Slider")
+    appWidth = 640
+    appHeight = 480
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    subwin.columnconfigure(2, weight=1)
+    rowsLoaded = []
+    def populate(frame):
+        nonlocal rowsLoaded
+        if len(rowsLoaded) != 0:
+            for e in rowsLoaded:
+                e.grid_forget()
+            rowsLoaded = []
+
+        slider = helperGetMainElements("Slider")
+        assert len(slider) > 0
+        slider = slider[0]
+        slides = prop(slider, "slides")
+
+        Button(frame, text="Add", command=lambda: showAddSlelement(lambda: populate(frame), -1), width=20).grid(row=0, column=1, columnspan=2)
+        i = 1
+        for index, value in enumerate(slides):
+            l1 = Label(frame, text=f"{index}", width=3, borderwidth="1",
+                    relief="solid")
+            l1.grid(row=i, column=0)
+            l2 = Label(frame, text=f"{value['title']}")
+            l2.grid(row=i, column=1)
+            l3 = Label(frame, text=f"{value['description']}")
+            l3.grid(row=i, column=2)
+            l4 = Label(frame, text=f"{value['image']}")
+            l4.grid(row=i, column=3)
+            l5 = Label(frame, text=f"{value['textColor']}")
+            l5.grid(row=i, column=4)
+            _fabricate = lambda e: lambda: showAddSlelement(lambda: populate(frame), e)
+            b5 = Button(frame, text="Edit", command=_fabricate(index))
+            b5.grid(row=i, column=5)
+            def _fabricate2(idx):
+                def _e():
+                    del slides[idx]
+                    helperUpdateMainElement(slider)
+                    populate(frame)
+                return _e
+                        
+            b6 = Button(frame, text="Delete", command=_fabricate2(index))
+            b6.grid(row=i, column=6)
+            rowsLoaded.append(l1)
+            rowsLoaded.append(l2)
+            rowsLoaded.append(l3)
+            rowsLoaded.append(l4)
+            rowsLoaded.append(l5)
+            rowsLoaded.append(b5)
+            rowsLoaded.append(b6)
+            i += 1
+        if i == 1:
+            l1 = Label(frame, text="No content")
+            l1.grid(row=1, column=1)
+            rowsLoaded.append(l1)
+
+    def onFrameConfigure(canvas):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def canvas_resized(event):
+        canvas.itemconfig(winid, width=event.width - 8)
+
+    canvas = Canvas(subwin, borderwidth=0)
+    frame = Frame(canvas)
+    vsb = Scrollbar(subwin, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=vsb.set)
+
+    vsb.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+    winid = canvas.create_window((4,4), window=frame, anchor="nw")
+
+    frame.bind("<Configure>", lambda event, canvas=canvas: onFrameConfigure(canvas))
+    frame.columnconfigure(1, weight=1)
+
+    canvas.bind("<Configure>", canvas_resized)
+    populate(frame)
+
+def showAddNewsArticle(callback, idx):
+    subwin = Toplevel(root)
+    subwin.title(f"CMS - Admin Database Management - Edit News Reference")
+    appWidth = 200
+    appHeight = 150
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+
+    boxes = helperGetMainElements("NewsBox")
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    def labelledInput(name, initial = ""):
+        lbFrame = Frame(subwin, height=5)
+        i = Entry(lbFrame)
+        i.insert(0, initial)
+        Label(lbFrame, text=name).pack(side=LEFT)
+        i.pack(side=RIGHT)
+        lbFrame.pack(side=TOP, pady=4)
+        return i
+    name = labelledInput("Title", prop(boxes[idx], 'title'))
+    desc = labelledInput("Description", prop(boxes[idx], 'description'))
+    link = labelledInput("Link URL", prop(boxes[idx], 'linkUrl'))
+    linkText = labelledInput("Link Text", prop(boxes[idx], 'linkText'))
+
+    def execute():
+        title = name.get()
+        description = desc.get()
+        href = link.get()
+        hrefText = linkText.get()
+        obj = { "title":  title, "description": description, "linkUrl": href, "linkText": hrefText }
+        boxes[idx]["component"]["props"] = obj
+        
+        helperUpdateMainElement(boxes[idx])
+        callback()
+        subwin.destroy()
+    Button(subwin, text='Edit', command=execute).pack(side=TOP, pady=4)
+
+
+def showManageNews():
+    subwin = Toplevel(root)
+    subwin.title("CMS - Admin Database Management - Manage News")
+    appWidth = 640
+    appHeight = 480
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    subwin.columnconfigure(2, weight=1)
+    rowsLoaded = []
+    def populate(frame):
+        nonlocal rowsLoaded
+        if len(rowsLoaded) != 0:
+            for e in rowsLoaded:
+                e.grid_forget()
+            rowsLoaded = []
+
+        boxes = helperGetMainElements("NewsBox")
+
+        i = 1
+        for index, value in enumerate(boxes):
+            l1 = Label(frame, text=f"{index}", width=3, borderwidth="1",
+                    relief="solid")
+            l1.grid(row=i, column=0)
+            l2 = Label(frame, text=f"{prop(value, 'title')}")
+            l2.grid(row=i, column=1)
+            l3 = Label(frame, text=f"{prop(value, 'description')}")
+            l3.grid(row=i, column=2)
+            l4 = Label(frame, text=f"{prop(value, 'linkUrl')}")
+            l4.grid(row=i, column=3)
+            l5 = Label(frame, text=f"{prop(value, 'linkText')}")
+            l5.grid(row=i, column=4)
+            _fabricate = lambda e: lambda: showAddNewsArticle(lambda: populate(frame), e)
+            b5 = Button(frame, text="Edit", command=_fabricate(index))
+            b5.grid(row=i, column=5)
+                        
+            rowsLoaded.append(l1)
+            rowsLoaded.append(l2)
+            rowsLoaded.append(l3)
+            rowsLoaded.append(l4)
+            rowsLoaded.append(l5)
+            rowsLoaded.append(b5)
+            i += 1
+        if i == 1:
+            l1 = Label(frame, text="No content")
+            l1.grid(row=1, column=1)
+            rowsLoaded.append(l1)
+
+    def onFrameConfigure(canvas):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def canvas_resized(event):
+        canvas.itemconfig(winid, width=event.width - 8)
+
+    canvas = Canvas(subwin, borderwidth=0)
+    frame = Frame(canvas)
+    vsb = Scrollbar(subwin, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=vsb.set)
+
+    vsb.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+    winid = canvas.create_window((4,4), window=frame, anchor="nw")
+
+    frame.bind("<Configure>", lambda event, canvas=canvas: onFrameConfigure(canvas))
+    frame.columnconfigure(1, weight=1)
+
+    canvas.bind("<Configure>", canvas_resized)
+    populate(frame)
+
+
+def showAddFooterLink(callback, idx):
+    subwin = Toplevel(root)
+    subwin.title(f"CMS - Admin Database Management - {'Edit' if idx != -1 else 'Add'} Footer Link")
+    appWidth = 200
+    appHeight = 150
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+
+    footer = helperGetMainElements("Footer")
+    assert len(footer) > 0
+    footer = footer[0]
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    def labelledInput(name, initial = ""):
+        lbFrame = Frame(subwin, height=5)
+        i = Entry(lbFrame)
+        i.insert(0, initial)
+        Label(lbFrame, text=name).pack(side=LEFT)
+        i.pack(side=RIGHT)
+        lbFrame.pack(side=TOP, pady=4)
+        return i
+    link = labelledInput("Link URL", prop(footer, 'links')[idx]['url'] if idx != -1 else 'https://example.com')
+    linkText = labelledInput("Link Text", prop(footer, 'links')[idx]['text'] if idx != -1 else 'Link Text')
+
+    def execute():
+        href = link.get()
+        hrefText = linkText.get()
+        obj = { "url": href, "text": hrefText }
+        if idx == -1:
+            prop(footer, "links").append(obj)
+        else:
+            prop(footer, 'links')[idx] = obj
+        
+        helperUpdateMainElement(footer)
+        callback()
+        subwin.destroy()
+    Button(subwin, text='Edit', command=execute).pack(side=TOP, pady=4)
+
+
+def showManageFooter():
+    subwin = Toplevel(root)
+    subwin.title("CMS - Admin Database Management - Manage News")
+    appWidth = 640
+    appHeight = 480
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    subwin.columnconfigure(2, weight=1)
+    rowsLoaded = []
+    def populate(frame):
+        nonlocal rowsLoaded
+        if len(rowsLoaded) != 0:
+            for e in rowsLoaded:
+                e.grid_forget()
+            rowsLoaded = []
+
+        footer = helperGetMainElements("Footer")
+        assert len(footer) > 0
+        footer = footer[0]
+        Button(frame, text="Add", command=lambda: showAddFooterLink(lambda: populate(frame), -1), width=20).grid(row=0, column=1, columnspan=2)
+        lbFrame = Frame(frame, height=5)
+        ent = Entry(lbFrame)
+        ent.insert(0, prop(footer, "copyrightText"))
+        Label(lbFrame, text="Copyright Text").pack(side=LEFT)
+        ent.pack(side=LEFT)
+        def updateCopyright():
+            footer["component"]["props"]["copyrightText"] = ent.get()
+            helperUpdateMainElement(footer)
+            populate(frame)
+        Button(lbFrame, text="Save", command=updateCopyright).pack(side=LEFT)
+        lbFrame.grid(row=1, column=1, columnspan=2)
+
+        i = 2
+        for index, value in enumerate(prop(footer, "links")):
+            l1 = Label(frame, text=f"{index}", width=3, borderwidth="1",
+                    relief="solid")
+            l1.grid(row=i, column=0)
+            l2 = Label(frame, text=f"{value['url']}")
+            l2.grid(row=i, column=1)
+            l3 = Label(frame, text=f"{value['text']}")
+            l3.grid(row=i, column=2)
+            _fabricate = lambda e: lambda: showAddFooterLink(lambda: populate(frame), e)
+            b5 = Button(frame, text="Edit", command=_fabricate(index))
+            b5.grid(row=i, column=5)
+            def _fabricate2(idx):
+                def _e():
+                    del prop(footer, "links")[idx]
+                    helperUpdateMainElement(footer)
+                    populate(frame)
+                return _e
+                        
+            b6 = Button(frame, text="Delete", command=_fabricate2(index))
+            b6.grid(row=i, column=6)
+
+            rowsLoaded.append(l1)
+            rowsLoaded.append(l2)
+            rowsLoaded.append(l3)
+            rowsLoaded.append(b5)
+            rowsLoaded.append(b6)
+            i += 1
+        if i == 2:
+            l1 = Label(frame, text="No content")
+            l1.grid(row=1, column=1)
+            rowsLoaded.append(l1)
+
+    def onFrameConfigure(canvas):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def canvas_resized(event):
+        canvas.itemconfig(winid, width=event.width - 8)
+
+    canvas = Canvas(subwin, borderwidth=0)
+    frame = Frame(canvas)
+    vsb = Scrollbar(subwin, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=vsb.set)
+
+    vsb.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+    winid = canvas.create_window((4,4), window=frame, anchor="nw")
+
+    frame.bind("<Configure>", lambda event, canvas=canvas: onFrameConfigure(canvas))
+    frame.columnconfigure(1, weight=1)
+
+    canvas.bind("<Configure>", canvas_resized)
+    populate(frame)
+
+
+
 def main():
     global root
     global database
@@ -431,7 +859,7 @@ def main():
         global database
         if database:
             database.close()
-        fname = "/ram/data.db"#askopenfilename()
+        fname = askopenfilename()
         if not fname:
             return
         database = sqlite3.connect(fname)
@@ -455,8 +883,8 @@ def main():
     root.title("CMS - Admin Database Management")
 
     # centrowanie okna na ekranie
-    appWidth = 640
-    appHeight = 480
+    appWidth = 800
+    appHeight = 150
 
     screenWidth = root.winfo_screenwidth()
     screenHeight = root.winfo_screenheight()
@@ -477,10 +905,15 @@ def main():
     dbConfigButtonsFrame.pack(side=TOP, padx=20, pady=20)
 
     mainActionsFrame = Frame(root)
-    manageUsersButton = Button(mainActionsFrame, text="Manage Users", command=showManageUsers)
-    manageFilesButton = Button(mainActionsFrame, text="Manage Files", command=showManageFiles)
-    manageLinksButton = Button(mainActionsFrame, text="Manage Links", command=showManageLinks)
-    leftToRight(30, manageUsersButton, manageFilesButton, manageLinksButton)
+
+    leftToRight(20, 
+        Button(mainActionsFrame, text="Manage Users", command=showManageUsers),
+        Button(mainActionsFrame, text="Manage Files", command=showManageFiles),
+        Button(mainActionsFrame, text="Manage Links", command=showManageLinks),
+        Button(mainActionsFrame, text="Manage Slider", command=showManageSlider),
+        Button(mainActionsFrame, text="Manage News", command=showManageNews),
+        Button(mainActionsFrame, text="Manage Footer", command=showManageFooter),
+    )
 
     closeDatabase()
 
