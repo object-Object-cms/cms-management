@@ -259,7 +259,7 @@ def showAddFile(callback):
 
     def execute():
         mimeType = mime.get()
-        
+
         with dbex() as cursor, open(fileToAdd, 'rb') as f:
             cursor.execute("insert into blobdata (type, content) values (?, ?)", (mimeType, f.read()))
         callback()
@@ -396,7 +396,7 @@ def showAddLink(callback, idx):
             content[idx] = obj
         else:
             content.append(obj)
-        
+
         with dbex() as cursor:
             if create:
                 cursor.execute("insert into specialpages (name, content) values ('MENUBAR', ?)", (json.dumps(content), ))
@@ -453,7 +453,7 @@ def showManageLinks():
                                 cursor.execute("update specialpages set content = ? where name = 'MENUBAR'", (json.dumps(content), ))
                             populate(frame)
                         return _e
-                                
+
                     b5 = Button(frame, text="Delete", command=_fabricate2(index))
                     b5.grid(row=i, column=4)
                     rowsLoaded.append(l1)
@@ -504,7 +504,7 @@ def helperUpdateMainElement(element):
         else:
             raise Exception("No elements altered")
         cursor.execute('update specialpages set content = ? where name = "HOME"', (json.dumps(content), ))
-                
+
 
 def helperGetMainElements(name):
     with dbq() as cursor:
@@ -525,11 +525,92 @@ def helperGetMainElements(name):
 def prop(e, n):
     return e["component"]["props"][n]
 
+def showImagePicker(callback):
+    subwin = Toplevel(root)
+    subwin.title("CMS - Admin Database Management - Image Picker")
+    appWidth = 800
+    appHeight = 480
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    subwin.columnconfigure(1, weight=1)
+    rowsLoaded = []
+    def populate(frame):
+        global _images
+        _images = []
+        nonlocal rowsLoaded
+        if len(rowsLoaded) != 0:
+            for e in rowsLoaded:
+                e.grid_forget()
+            rowsLoaded = []
+        with dbq() as cursor:
+            cursor.execute("select id, type, content from blobdata where type like 'image/%'")
+            Button(frame, text="Add", command=lambda: showAddFile(lambda: populate(frame)), width=50).grid(row=0, column=1, columnspan=2)
+            i = 1
+            for id_, type_, content in cursor.fetchall():
+                l1 = Label(frame, text=f"{id_}", width=3, borderwidth="1",
+                        relief="solid")
+                l1.grid(row=i, column=0)
+                l2 = Label(frame, text=f"{type_}")
+                l2.grid(row=i, column=1)
+
+                try:
+                    img = Image.open(BytesIO(content)).resize((250, 250), Image.LANCZOS)
+                    _images.append(ImageTk.PhotoImage(img))
+                    l3 = Label(frame, image = _images[-1])
+                    l3.grid(row=i, column=2)
+                except Exception as e:
+                    l3 = Label(frame, text="Cannot preview")
+                    l3.grid(row=i, column=2)
+                    print(e)
+
+                def execute(bid):
+                    callback(bid)
+                    subwin.destroy()
+                make_callback = lambda bid: lambda: execute(bid)
+                b4 = Button(frame, text="Choose", command=make_callback(id_))
+                b4.grid(row=i, column=3)
+                rowsLoaded.append(l1)
+                rowsLoaded.append(l2)
+                rowsLoaded.append(l3)
+                rowsLoaded.append(b4)
+                i += 1
+            if i == 1:
+                l1 = Label(frame, text="No images")
+                l1.grid(row=1, column=1)
+                rowsLoaded.append(l1)
+
+    def onFrameConfigure(canvas):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def canvas_resized(event):
+        canvas.itemconfig(winid, width=event.width - 8)
+
+    canvas = Canvas(subwin, borderwidth=0)
+    frame = Frame(canvas)
+    vsb = Scrollbar(subwin, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=vsb.set)
+
+    vsb.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+    winid = canvas.create_window((4,4), window=frame, anchor="nw")
+
+    frame.bind("<Configure>", lambda event, canvas=canvas: onFrameConfigure(canvas))
+    frame.columnconfigure(1, weight=1)
+
+    canvas.bind("<Configure>", canvas_resized)
+    populate(frame)
+
 def showAddSlelement(callback, idx):
     subwin = Toplevel(root)
     subwin.title(f"CMS - Admin Database Management - {'Edit' if idx != -1 else 'Add'} Slider Element")
-    appWidth = 200
-    appHeight = 150
+    appWidth = 300
+    appHeight = 200
 
     screenWidth = subwin.winfo_screenwidth()
     screenHeight = subwin.winfo_screenheight()
@@ -545,17 +626,22 @@ def showAddSlelement(callback, idx):
     slides = prop(slider, "slides")
 
     subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
-    def labelledInput(name, initial = ""):
+    def labelledInput(name, initial = "", imagePick = False):
         lbFrame = Frame(subwin, height=5)
         i = Entry(lbFrame)
         i.insert(0, initial)
+        def imagePicked(bid):
+            i.delete(0, END)
+            i.insert(0, f"${bid}")
+        if imagePick:
+            Button(lbFrame, text="Pick", command=lambda: showImagePicker(imagePicked)).pack(side=RIGHT)
         Label(lbFrame, text=name).pack(side=LEFT)
         i.pack(side=RIGHT)
         lbFrame.pack(side=TOP, pady=4)
         return i
     name = labelledInput("Title", slides[idx]['title'] if idx != -1 else 'Title')
     desc = labelledInput("Sub Title", slides[idx]['description'] if idx != -1 else 'A more detailed title')
-    image = labelledInput("Image URL", slides[idx]['image'] if idx != -1 else '$0')
+    image = labelledInput("Image URL", slides[idx]['image'] if idx != -1 else '$0', True)
     colorFr = Frame(subwin, height=5)
     Label(colorFr, text="Text Color").pack(side=LEFT)
     color = StringVar()
@@ -576,7 +662,7 @@ def showAddSlelement(callback, idx):
             slides[idx] = obj
         else:
             slides.append(obj)
-        
+
         helperUpdateMainElement(slider)
         callback()
         subwin.destroy()
@@ -609,7 +695,7 @@ def showManageSlider():
         if not len(slider) > 0:
             tkinter.messagebox.showwarning(title = "Error", message = "There's no slider on the main page. Please add one from the web UI")
             return
-            
+
         slider = slider[0]
         slides = prop(slider, "slides")
 
@@ -636,7 +722,7 @@ def showManageSlider():
                     helperUpdateMainElement(slider)
                     populate(frame)
                 return _e
-                        
+
             b6 = Button(frame, text="Delete", command=_fabricate2(index))
             b6.grid(row=i, column=6)
             rowsLoaded.append(l1)
@@ -708,7 +794,7 @@ def showAddNewsArticle(callback, idx):
         hrefText = linkText.get()
         obj = { "title":  title, "description": description, "linkUrl": href, "linkText": hrefText }
         boxes[idx]["component"]["props"] = obj
-        
+
         helperUpdateMainElement(boxes[idx])
         callback()
         subwin.destroy()
@@ -755,7 +841,7 @@ def showManageNews():
             _fabricate = lambda e: lambda: showAddNewsArticle(lambda: populate(frame), e)
             b5 = Button(frame, text="Edit", command=_fabricate(index))
             b5.grid(row=i, column=5)
-                        
+
             rowsLoaded.append(l1)
             rowsLoaded.append(l2)
             rowsLoaded.append(l3)
@@ -828,7 +914,7 @@ def showAddFooterLink(callback, idx):
             prop(footer, "links").append(obj)
         else:
             prop(footer, 'links')[idx] = obj
-        
+
         helperUpdateMainElement(footer)
         callback()
         subwin.destroy()
@@ -893,7 +979,7 @@ def showManageFooter():
                     helperUpdateMainElement(footer)
                     populate(frame)
                 return _e
-                        
+
             b6 = Button(frame, text="Delete", command=_fabricate2(index))
             b6.grid(row=i, column=6)
 
@@ -987,7 +1073,7 @@ def main():
 
     mainActionsFrame = Frame(root)
 
-    leftToRight(5, 
+    leftToRight(5,
         Button(mainActionsFrame, text="Manage Users", command=showManageUsers),
         Button(mainActionsFrame, text="Manage Files", command=showManageFiles),
         Button(mainActionsFrame, text="Manage Links", command=showManageLinks),
