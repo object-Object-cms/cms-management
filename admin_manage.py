@@ -112,11 +112,49 @@ def showAddUser(callback):
         subwin.destroy()
     Button(subwin, text="Add", command=execute).pack(side=TOP, pady=4)
 
+def showChangePassword(uid, callback):
+    subwin = Toplevel(root)
+    subwin.title("CMS - Admin Database Management - Change User's Password")
+    appWidth = 200
+    appHeight = 150
+
+    screenWidth = subwin.winfo_screenwidth()
+    screenHeight = subwin.winfo_screenheight()
+
+    x = (screenWidth / 2) - (appWidth / 2)
+    y = (screenHeight / 2) - (appHeight / 2)
+
+    subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
+    def labelledInput(name, factory=Entry):
+        lbFrame = Frame(subwin, height=5)
+        i = factory(lbFrame)
+        Label(lbFrame, text=name).pack(side=LEFT)
+        i.pack(side=RIGHT)
+        lbFrame.pack(side=TOP, pady=4)
+        return i
+    passw = labelledInput("Password")
+    def execute():
+        passw.configure(bg="red" if len(passw.get()) < 5 else "green")
+        password = passw.get()
+        if len(password) < 5:
+            return
+        salt = randsec()
+        hash_ = sha(password + salt)
+        with dbex() as cursor:
+            try:
+                cursor.execute("update userdata set salt = ?, hash = ? where uid = ?", (salt, hash_, uid))
+            except:
+                tkinter.messagebox.showwarning(title = "Error", message = "Error setting the new password")
+                return
+        callback()
+        subwin.destroy()
+    Button(subwin, text="Change", command=execute).pack(side=TOP, pady=4)
+
 
 def showManageUsers():
     subwin = Toplevel(root)
     subwin.title("CMS - Admin Database Management - Manage Users")
-    appWidth = 640
+    appWidth = 800
     appHeight = 480
 
     screenWidth = subwin.winfo_screenwidth()
@@ -151,17 +189,22 @@ def showManageUsers():
                     with dbex() as cs:
                         cs.execute("delete from userdata where uid = ?", (uid,))
                     populate(frame)
+                def changePassword(uid):
+                    showChangePassword(uid, lambda: populate(frame))
 
                 why = DoubleVar(root, value=accesslevel)
                 s3 = Spinbox(frame, from_=0, to=100, increment=1, textvariable=why, command=lambda: updateAccessLevel(uid))
                 s3.grid(row=i, column=2, padx=10)
                 b4 = Button(frame, text="Delete", command=lambda: delete(uid))
                 b4.grid(row=i, column=3, padx=10)
+                b5 = Button(frame, text="Change Password", command=lambda: changePassword(uid))
+                b5.grid(row=i, column=4, padx=10)
 
                 rowsLoaded.append(l1)
                 rowsLoaded.append(l2)
                 rowsLoaded.append(s3)
                 rowsLoaded.append(b4)
+                rowsLoaded.append(b5)
                 i += 1
             if i == 1:
                 l1 = Label(frame, text="No users")
@@ -227,7 +270,7 @@ def showAddFile(callback):
 def showManageFiles():
     subwin = Toplevel(root)
     subwin.title("CMS - Admin Database Management - Manage Files")
-    appWidth = 640
+    appWidth = 800
     appHeight = 480
 
     screenWidth = subwin.winfo_screenwidth()
@@ -367,7 +410,7 @@ def showAddLink(callback, idx):
 def showManageLinks():
     subwin = Toplevel(root)
     subwin.title("CMS - Admin Database Management - Manage Links")
-    appWidth = 640
+    appWidth = 800
     appHeight = 480
 
     screenWidth = subwin.winfo_screenwidth()
@@ -543,7 +586,7 @@ def showAddSlelement(callback, idx):
 def showManageSlider():
     subwin = Toplevel(root)
     subwin.title("CMS - Admin Database Management - Manage Slider")
-    appWidth = 640
+    appWidth = 800
     appHeight = 480
 
     screenWidth = subwin.winfo_screenwidth()
@@ -675,7 +718,7 @@ def showAddNewsArticle(callback, idx):
 def showManageNews():
     subwin = Toplevel(root)
     subwin.title("CMS - Admin Database Management - Manage News")
-    appWidth = 640
+    appWidth = 800
     appHeight = 480
 
     screenWidth = subwin.winfo_screenwidth()
@@ -795,7 +838,7 @@ def showAddFooterLink(callback, idx):
 def showManageFooter():
     subwin = Toplevel(root)
     subwin.title("CMS - Admin Database Management - Manage News")
-    appWidth = 640
+    appWidth = 800
     appHeight = 480
 
     screenWidth = subwin.winfo_screenwidth()
