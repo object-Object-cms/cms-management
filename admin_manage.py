@@ -40,6 +40,31 @@ def initDB():
                 content blob
             )
         """)
+        c.execute("""
+            create table if not exists articles (
+                id text primary key,
+                authorID integer,
+                title text,
+                description text,
+                bannerimage text,
+                category text,
+                publishdate integer,
+                content text
+            )
+        """)
+        c.execute("""
+            create table if not exists comments (
+                id integer primary key,
+                authorID integer,
+                content text
+            )
+        """)
+        c.execute("""
+            create table if not exists specialpages (
+                name text primary key,
+                content text
+            )
+        """)
 
 def showAddUser(callback):
     subwin = Toplevel(root)
@@ -426,7 +451,9 @@ def helperUpdateMainElement(element):
         content = cursor.fetchone()
         if not content: return
         content = json.loads(content[0])
-        assert content['name'] == 'RootGrid'
+        if not content['name'] == 'RootGrid':
+            tkinter.messagebox.showwarning(title = "Error", message = "There's no main page. Please create it in the web UI")
+            return
         for index, subProp in enumerate(content["props"]["subComponents"]):
             if subProp["id"] == element["id"]:
                 content["props"]['subComponents'][index] = element
@@ -444,7 +471,9 @@ def helperGetMainElements(name):
             return []
         content = json.loads(content[0])
         retList = []
-        assert content['name'] == 'RootGrid'
+        if not content['name'] == 'RootGrid':
+            tkinter.messagebox.showwarning(title = "Error", message = "There's no main page. Please create it in the web UI")
+            return
         for subProp in content["props"]["subComponents"]:
             if subProp["component"]["name"] == name:
                 retList.append(subProp)
@@ -466,7 +495,9 @@ def showAddSlelement(callback, idx):
     y = (screenHeight / 2) - (appHeight / 2)
 
     slider = helperGetMainElements("Slider")
-    assert len(slider) > 0
+    if not len(slider) > 0:
+        tkinter.messagebox.showwarning(title = "Error", message = "There's no slider on the main page. Please add one from the web UI")
+        return
     slider = slider[0]
     slides = prop(slider, "slides")
 
@@ -532,7 +563,10 @@ def showManageSlider():
             rowsLoaded = []
 
         slider = helperGetMainElements("Slider")
-        assert len(slider) > 0
+        if not len(slider) > 0:
+            tkinter.messagebox.showwarning(title = "Error", message = "There's no slider on the main page. Please add one from the web UI")
+            return
+            
         slider = slider[0]
         slides = prop(slider, "slides")
 
@@ -726,7 +760,9 @@ def showAddFooterLink(callback, idx):
     y = (screenHeight / 2) - (appHeight / 2)
 
     footer = helperGetMainElements("Footer")
-    assert len(footer) > 0
+    if not len(footer) > 0:
+        tkinter.messagebox.showwarning(title = "Error", message = "There's no footer on the main page. Please add one from the web UI")
+        return
     footer = footer[0]
 
     subwin.geometry(f'{appWidth}x{appHeight}+{int(x)}+{int(y)}')
@@ -779,7 +815,9 @@ def showManageFooter():
             rowsLoaded = []
 
         footer = helperGetMainElements("Footer")
-        assert len(footer) > 0
+        if not len(footer) > 0:
+            tkinter.messagebox.showwarning(title = "Error", message = "There's no footer on the main page. Please add one from the web UI")
+            return
         footer = footer[0]
         Button(frame, text="Add", command=lambda: showAddFooterLink(lambda: populate(frame), -1), width=20).grid(row=0, column=1, columnspan=2)
         lbFrame = Frame(frame, height=5)
@@ -906,7 +944,7 @@ def main():
 
     mainActionsFrame = Frame(root)
 
-    leftToRight(20, 
+    leftToRight(5, 
         Button(mainActionsFrame, text="Manage Users", command=showManageUsers),
         Button(mainActionsFrame, text="Manage Files", command=showManageFiles),
         Button(mainActionsFrame, text="Manage Links", command=showManageLinks),
@@ -920,11 +958,4 @@ def main():
     mainActionsFrame.pack(side=TOP, padx=20, pady=20)
     root.mainloop()
 
-def kill(a, b):
-    root.quit()
-    root.update()
-
-signal.signal(signal.SIGINT, kill)
-main = Thread(target=main)
-main.start()
-main.join()
+if __name__ == "__main__": main()
